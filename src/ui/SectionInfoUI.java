@@ -19,7 +19,7 @@
  * 使用方式：
  *   java ui.SectionInfoUI
  */
-public class SectionInfoUI {
+public class SectionInfoUI { 
 
     /**
      * 程序入口：启动 GUI 主窗口。
