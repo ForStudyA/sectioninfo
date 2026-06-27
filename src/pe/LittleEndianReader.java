@@ -85,7 +85,8 @@ public class LittleEndianReader {
         while (read < length) {
             int n = channel.read(nameBuffer, position + read);
             if (n < 0) {
-                break;
+                throw new IOException("EOF reading ASCII string at offset " + (position + read)
+                    + ", expected " + length + " bytes but got " + read);
             }
             read += n;
         }
@@ -94,7 +95,18 @@ public class LittleEndianReader {
         while (end < bytes.length && bytes[end] != 0) {
             end++;
         }
-        return new String(bytes, 0, end, StandardCharsets.US_ASCII);
+        // 过滤不可打印字符（0x00-0x1F, 0x7F-0x9F），替换为 '.' 避免方框乱码
+        byte[] clean = new byte[end];
+        int out = 0;
+        for (int i = 0; i < end; i++) {
+            int b = bytes[i] & 0xFF;
+            if (b >= 0x20 && b < 0x7F || b >= 0xA0) {
+                clean[out++] = bytes[i];
+            } else {
+                clean[out++] = (byte) '.';
+            }
+        }
+        return new String(clean, 0, out, StandardCharsets.ISO_8859_1);
     }
 
     private void readFully(long position, int length) throws IOException {
@@ -102,7 +114,8 @@ public class LittleEndianReader {
         while (read < length) {
             int n = channel.read(buffer, position + read);
             if (n < 0) {
-                break;
+                throw new IOException("EOF at offset " + (position + read)
+                    + ", expected " + length + " bytes but got " + read);
             }
             read += n;
         }

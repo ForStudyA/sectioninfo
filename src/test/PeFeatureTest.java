@@ -17,7 +17,9 @@ public class PeFeatureTest {
         assertNotNull(show.dosHeader.magicStatus, "dos header");
         assertNotNull(show.fileHeader.machine, "file header machine");
         assertNotNull(show.optionalHeader.magic, "optional header magic");
-        assertFalse(show.sections.isEmpty(), "sections should not be empty");
+        // 合法 PE 可以有 0 个节段，不再强制要求 sections 非空
+        assertFalse("读取异常".equals(show.dosHeader.magicStatus), "parse should not fail");
+        assertFalse("格式异常".equals(show.dosHeader.magicStatus), "format should be valid");
 
         printShowData(peFile, show);
         System.out.println("PeFeatureTest passed");

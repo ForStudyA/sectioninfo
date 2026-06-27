@@ -1,0 +1,11 @@
+# Build output
+bin/
+
+# IDE
+*.iml
+.idea/
+.vscode/
+
+# OS
+.DS_Store
+Thumbs.db
