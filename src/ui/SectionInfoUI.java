@@ -3,44 +3,43 @@ package ui;
 import java.awt.BorderLayout;
 import java.awt.CardLayout;
 import java.awt.Color;
-import java.awt.Component;
 import java.awt.Dimension;
 import java.awt.FlowLayout;
 import java.awt.Font;
 import java.awt.GradientPaint;
 import java.awt.Graphics;
 import java.awt.Graphics2D;
-import java.awt.HeadlessException;
 import java.awt.Image;
-import java.awt.event.ActionEvent;
-import java.awt.event.ActionListener;
-import java.io.File;
-import java.io.FileWriter;
-import java.io.PrintWriter;
-import java.util.ArrayList;
-import java.util.List;
-
 import java.awt.datatransfer.DataFlavor;
 import java.awt.dnd.DnDConstants;
 import java.awt.dnd.DropTarget;
 import java.awt.dnd.DropTargetAdapter;
 import java.awt.dnd.DropTargetDropEvent;
+import java.awt.event.ActionEvent;
+import java.awt.event.ActionListener;
+import java.io.File;
+import java.io.FileWriter;
+import java.io.PrintWriter;
+import java.text.SimpleDateFormat;
+import java.util.ArrayList;
+import java.util.Date;
+import java.util.List;
 
 import javax.swing.BorderFactory;
 import javax.swing.Box;
 import javax.swing.BoxLayout;
+import javax.swing.Icon;
 import javax.swing.ImageIcon;
 import javax.swing.JButton;
-import javax.swing.JDialog;
 import javax.swing.JFileChooser;
 import javax.swing.JFrame;
 import javax.swing.JLabel;
 import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
+import javax.swing.JSeparator;
 import javax.swing.JTextArea;
 import javax.swing.SwingConstants;
-import javax.swing.Icon;
 import javax.swing.UIManager;
 import javax.swing.filechooser.FileNameExtensionFilter;
 import javax.swing.filechooser.FileView;
@@ -50,7 +49,7 @@ import pe.PeShowParser;
 
 /**
  * ============================================ PE文件分析器 - 主界面类
- * 功能：显示PE文件的各种信息，支持加载文件和导出数据 包含：主界面、背景面板、自定义文件选择器
+ * 功能：显示PE文件的各种信息，支持加载文件和导出数据 包含：主界面、背景面板、自定义文件选择器 版本：v2.0
  * ============================================
  */
 public class SectionInfoUI {
@@ -71,6 +70,9 @@ public class SectionInfoUI {
 	/** 上次打开的目录（用于记住用户位置） */
 	private static File lastDirectory;
 
+	/** 文件加载时间戳 */
+	private static long loadTimestamp;
+
 	// ============================================
 	// 二、卡片名称常量
 	// ============================================
@@ -80,6 +82,7 @@ public class SectionInfoUI {
 	private static final String CARD_FILE = "文件头";
 	private static final String CARD_OPTIONAL = "可选头";
 	private static final String CARD_SECTIONS = "节表";
+	private static final String CARD_STATS = "统计信息";
 
 	// ============================================
 	// 三、UI组件变量
@@ -113,8 +116,8 @@ public class SectionInfoUI {
 		showData = createEmptyData();
 
 		// 创建主窗口
-		mainFrame = new JFrame("PE文件分析器");
-		mainFrame.setSize(1000, 700);
+		mainFrame = new JFrame("PE文件分析器 v2.0");
+		mainFrame.setSize(1100, 750);
 		mainFrame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
 		mainFrame.setLocationRelativeTo(null);
 
@@ -146,6 +149,19 @@ public class SectionInfoUI {
 		mainFrame.add(mainPanel);
 
 		// 拖拽支持：用户可直接将 PE 文件拖入窗口
+		setupDragDrop(mainPanel);
+
+		// 键盘快捷键：Ctrl+O 打开, Ctrl+S 导出
+		setupKeyboardShortcuts();
+
+		mainFrame.setVisible(true);
+	}
+
+	// ============================================
+	// 四-A、辅助初始化方法
+	// ============================================
+
+	private static void setupDragDrop(BackgroundPanel mainPanel) {
 		mainPanel.setDropTarget(new DropTarget(mainPanel, DnDConstants.ACTION_COPY_OR_MOVE, new DropTargetAdapter() {
 			@Override
 			public void drop(DropTargetDropEvent dtde) {
@@ -160,22 +176,23 @@ public class SectionInfoUI {
 						if (name.endsWith(".exe") || name.endsWith(".dll") || name.endsWith(".sys")) {
 							loadPEFile(file);
 						} else {
-							JOptionPane.showMessageDialog(mainFrame,
-									"不支持的文件类型，请拖入 .exe / .dll / .sys 文件",
-									"提示", JOptionPane.WARNING_MESSAGE);
+							JOptionPane.showMessageDialog(mainFrame, "不支持的文件类型，请拖入 .exe / .dll / .sys 文件", "提示",
+									JOptionPane.WARNING_MESSAGE);
 						}
 					}
 					dtde.dropComplete(true);
 				} catch (Exception ex) {
-						System.err.println("拖拽处理失败: " + ex.getMessage());
-						dtde.dropComplete(false);
-					}
+					System.err.println("拖拽处理失败: " + ex.getMessage());
+					dtde.dropComplete(false);
+				}
 			}
 		}));
+	}
 
-		// 键盘快捷键：Ctrl+O 打开, Ctrl+S 导出
+	private static void setupKeyboardShortcuts() {
+		// Ctrl+O 打开
 		mainFrame.getRootPane().getInputMap(javax.swing.JComponent.WHEN_IN_FOCUSED_WINDOW)
-			.put(javax.swing.KeyStroke.getKeyStroke("ctrl O"), "open");
+				.put(javax.swing.KeyStroke.getKeyStroke("ctrl O"), "open");
 		mainFrame.getRootPane().getActionMap().put("open", new javax.swing.AbstractAction() {
 			public void actionPerformed(java.awt.event.ActionEvent e) {
 				JFileChooser fileChooser = createStyledFileChooser();
@@ -187,18 +204,30 @@ public class SectionInfoUI {
 				}
 			}
 		});
+
+		// Ctrl+S 导出
 		mainFrame.getRootPane().getInputMap(javax.swing.JComponent.WHEN_IN_FOCUSED_WINDOW)
-			.put(javax.swing.KeyStroke.getKeyStroke("ctrl S"), "export");
+				.put(javax.swing.KeyStroke.getKeyStroke("ctrl S"), "export");
 		mainFrame.getRootPane().getActionMap().put("export", new javax.swing.AbstractAction() {
 			public void actionPerformed(java.awt.event.ActionEvent e) {
 				if (isDataLoaded()) {
 					String data = getAllDataAsText();
-					if (data != null) saveDataToFile(data);
+					if (data != null)
+						saveDataToFile(data);
 				}
 			}
 		});
 
-		mainFrame.setVisible(true);
+		// Ctrl+E 导出JSON
+		mainFrame.getRootPane().getInputMap(javax.swing.JComponent.WHEN_IN_FOCUSED_WINDOW)
+				.put(javax.swing.KeyStroke.getKeyStroke("ctrl E"), "exportJson");
+		mainFrame.getRootPane().getActionMap().put("exportJson", new javax.swing.AbstractAction() {
+			public void actionPerformed(java.awt.event.ActionEvent e) {
+				if (isDataLoaded()) {
+					exportJsonData();
+				}
+			}
+		});
 	}
 
 	// ============================================
@@ -282,6 +311,10 @@ public class SectionInfoUI {
 		return showData.optionalHeader.subsystem;
 	}
 
+	public static long getLoadTimestamp() {
+		return loadTimestamp;
+	}
+
 	// ============================================
 	// 六、数据导出方法
 	// ============================================
@@ -290,8 +323,8 @@ public class SectionInfoUI {
 		if (showData == null) {
 			return "暂无数据，请先加载PE文件";
 		}
-		if (showData.dosHeader == null || showData.fileHeader == null
-			|| showData.optionalHeader == null || showData.sections == null) {
+		if (showData.dosHeader == null || showData.fileHeader == null || showData.optionalHeader == null
+				|| showData.sections == null) {
 			return "数据不完整，请重新加载PE文件";
 		}
 		if (showData.sections.isEmpty() && "未加载".equals(showData.dosHeader.magicStatus)) {
@@ -301,34 +334,38 @@ public class SectionInfoUI {
 		StringBuilder sb = new StringBuilder();
 
 		sb.append("========== PE文件分析结果 ==========\n");
-		sb.append("文件路径: ").append(currentFilePath).append("\n\n");
+		sb.append("分析时间: ").append(new SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(new Date(loadTimestamp)))
+				.append("\n");
+		sb.append("文件路径: ").append(currentFilePath).append("\n");
+		File f = new File(currentFilePath);
+		sb.append("文件大小: ").append(formatFileSize(f.length())).append("\n\n");
 
 		sb.append("【DOS头】\n");
-		sb.append("Magic状态: ").append(showData.dosHeader.magicStatus).append("\n\n");
+		sb.append("  Magic状态: ").append(showData.dosHeader.magicStatus).append("\n\n");
 
 		sb.append("【标准PE文件头】\n");
-		sb.append("Machine: ").append(showData.fileHeader.machine).append("\n");
-		sb.append("节数量: ").append(showData.fileHeader.numberOfSections).append("\n");
-		sb.append("时间戳: ").append(showData.fileHeader.timeDateStamp).append("\n");
-		sb.append("符号表偏移: ").append(showData.fileHeader.pointerToSymbolTable).append("\n");
-		sb.append("符号数量: ").append(showData.fileHeader.numberOfSymbols).append("\n");
-		sb.append("可选头大小: ").append(showData.fileHeader.sizeOfOptionalHeader).append("\n");
-		sb.append("特征: ").append(showData.fileHeader.characteristics).append("\n\n");
+		sb.append("  Machine: ").append(showData.fileHeader.machine).append("\n");
+		sb.append("  节数量: ").append(showData.fileHeader.numberOfSections).append("\n");
+		sb.append("  时间戳: ").append(showData.fileHeader.timeDateStamp).append("\n");
+		sb.append("  符号表偏移: ").append(showData.fileHeader.pointerToSymbolTable).append("\n");
+		sb.append("  符号数量: ").append(showData.fileHeader.numberOfSymbols).append("\n");
+		sb.append("  可选头大小: ").append(showData.fileHeader.sizeOfOptionalHeader).append("\n");
+		sb.append("  特征: ").append(showData.fileHeader.characteristics).append("\n\n");
 
 		sb.append("【可选头】\n");
-		sb.append("Magic: ").append(showData.optionalHeader.magic).append("\n");
-		sb.append("链接器版本: ").append(showData.optionalHeader.LinkerVersion).append("\n");
-		sb.append("入口点: ").append(showData.optionalHeader.addressOfEntryPoint).append("\n");
-		sb.append("代码基址: ").append(showData.optionalHeader.baseOfCode).append("\n");
-		sb.append("镜像基址: ").append(showData.optionalHeader.imageBase).append("\n");
-		sb.append("节对齐: ").append(showData.optionalHeader.sectionAlignment).append("\n");
-		sb.append("文件对齐: ").append(showData.optionalHeader.fileAlignment).append("\n");
-		sb.append("操作系统版本: ").append(showData.optionalHeader.OperatingSystemVersion).append("\n");
-		sb.append("镜像版本: ").append(showData.optionalHeader.ImageVersion).append("\n");
-		sb.append("子系统版本: ").append(showData.optionalHeader.SubsystemVersion).append("\n");
-		sb.append("镜像大小: ").append(showData.optionalHeader.sizeOfImage).append("\n");
-		sb.append("头大小: ").append(showData.optionalHeader.sizeOfHeaders).append("\n");
-		sb.append("子系统: ").append(showData.optionalHeader.subsystem).append("\n\n");
+		sb.append("  Magic: ").append(showData.optionalHeader.magic).append("\n");
+		sb.append("  链接器版本: ").append(showData.optionalHeader.LinkerVersion).append("\n");
+		sb.append("  入口点: ").append(showData.optionalHeader.addressOfEntryPoint).append("\n");
+		sb.append("  代码基址: ").append(showData.optionalHeader.baseOfCode).append("\n");
+		sb.append("  镜像基址: ").append(showData.optionalHeader.imageBase).append("\n");
+		sb.append("  节对齐: ").append(showData.optionalHeader.sectionAlignment).append("\n");
+		sb.append("  文件对齐: ").append(showData.optionalHeader.fileAlignment).append("\n");
+		sb.append("  操作系统版本: ").append(showData.optionalHeader.OperatingSystemVersion).append("\n");
+		sb.append("  镜像版本: ").append(showData.optionalHeader.ImageVersion).append("\n");
+		sb.append("  子系统版本: ").append(showData.optionalHeader.SubsystemVersion).append("\n");
+		sb.append("  镜像大小: ").append(showData.optionalHeader.sizeOfImage).append("\n");
+		sb.append("  头大小: ").append(showData.optionalHeader.sizeOfHeaders).append("\n");
+		sb.append("  子系统: ").append(showData.optionalHeader.subsystem).append("\n\n");
 
 		sb.append("【节表 (共 ").append(showData.sections.size()).append("个)】\n");
 		for (int i = 0; i < showData.sections.size(); i++) {
@@ -340,6 +377,12 @@ public class SectionInfoUI {
 			sb.append("    原始数据偏移: ").append(section.pointerToRawData).append("\n");
 			sb.append("    特征: ").append(section.characteristics).append("\n");
 		}
+
+		// 添加统计信息
+		sb.append("\n【统计信息】\n");
+		sb.append("  总节数: ").append(showData.sections.size()).append("\n");
+		sb.append("  总节大小: ").append(calculateTotalSectionSize()).append("\n");
+		sb.append("  平均节大小: ").append(calculateAverageSectionSize()).append("\n");
 
 		return sb.toString();
 	}
@@ -368,8 +411,125 @@ public class SectionInfoUI {
 	}
 
 	private static String escapeJson(String s) {
-		if (s == null) return "";
+		if (s == null)
+			return "";
 		return s.replace("\\", "\\\\").replace("\"", "\\\"");
+	}
+
+	// ============================================
+	// 六-A、统计计算方法
+	// ============================================
+
+	private static String calculateTotalSectionSize() {
+		if (showData == null || showData.sections.isEmpty())
+			return "0 字节";
+		long total = 0;
+		for (ShowData.SectionInfo section : showData.sections) {
+			total += parseSize(section.virtualSize);
+		}
+		return formatFileSize(total);
+	}
+
+	private static String calculateAverageSectionSize() {
+		if (showData == null || showData.sections.isEmpty())
+			return "0 字节";
+		long total = 0;
+		for (ShowData.SectionInfo section : showData.sections) {
+			total += parseSize(section.virtualSize);
+		}
+		return formatFileSize(total / showData.sections.size());
+	}
+
+	private static long parseSize(String sizeStr) {
+		if (sizeStr == null || sizeStr.isEmpty())
+			return 0;
+		try {
+			String cleaned = sizeStr.replace("字节", "").trim();
+			if (cleaned.toLowerCase().contains("kb")) {
+				return (long) (Double.parseDouble(cleaned.replaceAll("[^0-9.]", "")) * 1024);
+			} else if (cleaned.toLowerCase().contains("mb")) {
+				return (long) (Double.parseDouble(cleaned.replaceAll("[^0-9.]", "")) * 1024 * 1024);
+			} else {
+				return Long.parseLong(cleaned.replaceAll("[^0-9]", ""));
+			}
+		} catch (Exception e) {
+			return 0;
+		}
+	}
+
+	private static String formatFileSize(long size) {
+		if (size < 1024)
+			return size + " B";
+		if (size < 1024 * 1024)
+			return String.format("%.2f KB", size / 1024.0);
+		if (size < 1024 * 1024 * 1024)
+			return String.format("%.2f MB", size / (1024.0 * 1024));
+		return String.format("%.2f GB", size / (1024.0 * 1024 * 1024));
+	}
+
+	// ============================================
+	// 六-B、JSON导出功能
+	// ============================================
+
+	public static void exportJsonData() {
+		String jsonData = getFullJsonData();
+		JFileChooser fileChooser = new JFileChooser();
+		fileChooser.setFileView(createSafeFileView());
+		fileChooser.setSelectedFile(new File("PE分析结果.json"));
+
+		if (fileChooser.showSaveDialog(mainFrame) == JFileChooser.APPROVE_OPTION) {
+			try (PrintWriter writer = new PrintWriter(new FileWriter(fileChooser.getSelectedFile()))) {
+				writer.print(jsonData);
+				JOptionPane.showMessageDialog(mainFrame, "JSON数据导出成功！", "提示", JOptionPane.INFORMATION_MESSAGE);
+			} catch (Exception ex) {
+				ex.printStackTrace();
+				JOptionPane.showMessageDialog(mainFrame, "导出失败：" + ex.getMessage(), "错误", JOptionPane.ERROR_MESSAGE);
+			}
+		}
+	}
+
+	public static String getFullJsonData() {
+		if (showData == null)
+			return "{}";
+		StringBuilder sb = new StringBuilder();
+		sb.append("{");
+		sb.append("\"filePath\":\"").append(escapeJson(currentFilePath)).append("\",");
+		sb.append("\"loadTime\":\"").append(new SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(new Date(loadTimestamp)))
+				.append("\",");
+		sb.append("\"dosHeader\":{");
+		sb.append("\"magicStatus\":\"").append(escapeJson(showData.dosHeader.magicStatus)).append("\"");
+		sb.append("},");
+		sb.append("\"fileHeader\":{");
+		sb.append("\"machine\":\"").append(escapeJson(showData.fileHeader.machine)).append("\",");
+		sb.append("\"numberOfSections\":\"").append(escapeJson(showData.fileHeader.numberOfSections)).append("\",");
+		sb.append("\"timeDateStamp\":\"").append(escapeJson(showData.fileHeader.timeDateStamp)).append("\",");
+		sb.append("\"pointerToSymbolTable\":\"").append(escapeJson(showData.fileHeader.pointerToSymbolTable))
+				.append("\",");
+		sb.append("\"numberOfSymbols\":\"").append(escapeJson(showData.fileHeader.numberOfSymbols)).append("\",");
+		sb.append("\"sizeOfOptionalHeader\":\"").append(escapeJson(showData.fileHeader.sizeOfOptionalHeader))
+				.append("\",");
+		sb.append("\"characteristics\":\"").append(escapeJson(showData.fileHeader.characteristics)).append("\"");
+		sb.append("},");
+		sb.append("\"optionalHeader\":{");
+		sb.append("\"magic\":\"").append(escapeJson(showData.optionalHeader.magic)).append("\",");
+		sb.append("\"linkerVersion\":\"").append(escapeJson(showData.optionalHeader.LinkerVersion)).append("\",");
+		sb.append("\"addressOfEntryPoint\":\"").append(escapeJson(showData.optionalHeader.addressOfEntryPoint))
+				.append("\",");
+		sb.append("\"baseOfCode\":\"").append(escapeJson(showData.optionalHeader.baseOfCode)).append("\",");
+		sb.append("\"imageBase\":\"").append(escapeJson(showData.optionalHeader.imageBase)).append("\",");
+		sb.append("\"sectionAlignment\":\"").append(escapeJson(showData.optionalHeader.sectionAlignment)).append("\",");
+		sb.append("\"fileAlignment\":\"").append(escapeJson(showData.optionalHeader.fileAlignment)).append("\",");
+		sb.append("\"operatingSystemVersion\":\"").append(escapeJson(showData.optionalHeader.OperatingSystemVersion))
+				.append("\",");
+		sb.append("\"imageVersion\":\"").append(escapeJson(showData.optionalHeader.ImageVersion)).append("\",");
+		sb.append("\"subsystemVersion\":\"").append(escapeJson(showData.optionalHeader.SubsystemVersion)).append("\",");
+		sb.append("\"sizeOfImage\":\"").append(escapeJson(showData.optionalHeader.sizeOfImage)).append("\",");
+		sb.append("\"sizeOfHeaders\":\"").append(escapeJson(showData.optionalHeader.sizeOfHeaders)).append("\",");
+		sb.append("\"subsystem\":\"").append(escapeJson(showData.optionalHeader.subsystem)).append("\"");
+		sb.append("},");
+		sb.append("\"sections\":").append(getSectionsAsJson());
+		sb.append("}");
+		return sb.toString();
 	}
 
 	// ============================================
@@ -396,16 +556,15 @@ public class SectionInfoUI {
 	// 八、核心功能：加载PE文件
 	// ============================================
 	public static void loadPEFile(File file) {
+		loadTimestamp = System.currentTimeMillis();
 		currentFilePath = file.getAbsolutePath();
 		ShowData newData = PeShowParser.parse(currentFilePath);
 
-		// 检查解析结果中的异常标记（PeShowParser 不抛异常，用 magicStatus 传递错误）
 		String magicStatus = newData.dosHeader.magicStatus;
 		if ("读取异常".equals(magicStatus) || "格式异常".equals(magicStatus)) {
 			updateStatusBar(" " + magicStatus + ": " + file.getName());
-			JOptionPane.showMessageDialog(mainFrame,
-					" " + magicStatus + "！\n文件: " + file.getAbsolutePath(),
-					"解析失败", JOptionPane.ERROR_MESSAGE);
+			JOptionPane.showMessageDialog(mainFrame, " " + magicStatus + "！\n文件: " + file.getAbsolutePath(), "解析失败",
+					JOptionPane.ERROR_MESSAGE);
 			return;
 		}
 
@@ -413,15 +572,11 @@ public class SectionInfoUI {
 		isDataLoaded = true;
 
 		refreshAllCards();
-		// 状态栏：显示文件名、大小、节数、格式
 		long fileSize = file.length();
-		String sizeStr;
-		if (fileSize < 1024) sizeStr = fileSize + " B";
-		else if (fileSize < 1024 * 1024) sizeStr = String.format("%.1f KB", fileSize / 1024.0);
-		else sizeStr = String.format("%.1f MB", fileSize / (1024.0 * 1024));
+		String sizeStr = formatFileSize(fileSize);
 		String format = showData.optionalHeader.magic;
 		updateStatusBar(file.getName() + " | " + sizeStr + " | " + format + " | " + showData.sections.size() + "个节");
-		mainFrame.setTitle("PE文件分析器 - " + file.getName());
+		mainFrame.setTitle("PE文件分析器 v2.0 - " + file.getName());
 		switchCard(CARD_OVERVIEW);
 	}
 
@@ -436,6 +591,7 @@ public class SectionInfoUI {
 		cardPanel.add(createFileHeaderCard(), CARD_FILE);
 		cardPanel.add(createOptionalHeaderCard(), CARD_OPTIONAL);
 		cardPanel.add(createSectionsCard(), CARD_SECTIONS);
+		cardPanel.add(createStatsCard(), CARD_STATS);
 
 		cardPanel.revalidate();
 		cardPanel.repaint();
@@ -450,7 +606,7 @@ public class SectionInfoUI {
 		panel.setOpaque(false);
 		panel.setBorder(BorderFactory.createEmptyBorder(5, 10, 10, 10));
 
-		JLabel title = new JLabel("PE文件分析器", SwingConstants.CENTER);
+		JLabel title = new JLabel("PE文件分析器 v2.0", SwingConstants.CENTER);
 		title.setFont(new Font("微软雅黑", Font.BOLD, 28));
 		title.setForeground(Color.WHITE);
 		panel.add(title, BorderLayout.CENTER);
@@ -464,19 +620,22 @@ public class SectionInfoUI {
 		JButton exportBtn = createExportButton();
 		btnPanel.add(exportBtn);
 
+		JButton jsonBtn = createJsonExportButton();
+		btnPanel.add(jsonBtn);
+
 		panel.add(btnPanel, BorderLayout.EAST);
 
 		return panel;
 	}
 
 	private static JButton createLoadButton() {
-		JButton loadBtn = new JButton("加载PE文件");
+		JButton loadBtn = new JButton("加载");
 		loadBtn.setFont(new Font("微软雅黑", Font.BOLD, 14));
 		loadBtn.setBackground(new Color(46, 204, 113));
 		loadBtn.setForeground(Color.WHITE);
 		loadBtn.setFocusPainted(false);
 		loadBtn.setBorderPainted(false);
-		loadBtn.setPreferredSize(new Dimension(150, 40));
+		loadBtn.setPreferredSize(new Dimension(100, 40));
 
 		loadBtn.addActionListener(new ActionListener() {
 			@Override
@@ -495,13 +654,13 @@ public class SectionInfoUI {
 	}
 
 	private static JButton createExportButton() {
-		JButton exportBtn = new JButton("导出信息");
+		JButton exportBtn = new JButton("导出");
 		exportBtn.setFont(new Font("微软雅黑", Font.BOLD, 14));
 		exportBtn.setBackground(new Color(52, 152, 219));
 		exportBtn.setForeground(Color.WHITE);
 		exportBtn.setFocusPainted(false);
 		exportBtn.setBorderPainted(false);
-		exportBtn.setPreferredSize(new Dimension(120, 40));
+		exportBtn.setPreferredSize(new Dimension(100, 40));
 
 		exportBtn.addActionListener(new ActionListener() {
 			@Override
@@ -519,17 +678,44 @@ public class SectionInfoUI {
 				JScrollPane scrollPane = new JScrollPane(textArea);
 				scrollPane.setPreferredSize(new Dimension(700, 500));
 
-				Object[] options = { "保存到文件", "关闭" };
-				int result = JOptionPane.showOptionDialog(mainFrame, scrollPane, "PE文件详细信息",
-						JOptionPane.DEFAULT_OPTION, JOptionPane.INFORMATION_MESSAGE, null, options, options[1]);
+				Object[] options = { "保存到文件", "复制到剪贴板", "关闭" };
+				int result = JOptionPane.showOptionDialog(mainFrame, scrollPane, "PE文件详细信息", JOptionPane.DEFAULT_OPTION,
+						JOptionPane.INFORMATION_MESSAGE, null, options, options[2]);
 
 				if (result == 0) {
 					saveDataToFile(data);
+				} else if (result == 1) {
+					textArea.selectAll();
+					textArea.copy();
+					JOptionPane.showMessageDialog(mainFrame, "已复制到剪贴板！", "提示", JOptionPane.INFORMATION_MESSAGE);
 				}
 			}
 		});
 
 		return exportBtn;
+	}
+
+	private static JButton createJsonExportButton() {
+		JButton jsonBtn = new JButton("JSON");
+		jsonBtn.setFont(new Font("微软雅黑", Font.BOLD, 14));
+		jsonBtn.setBackground(new Color(155, 89, 182));
+		jsonBtn.setForeground(Color.WHITE);
+		jsonBtn.setFocusPainted(false);
+		jsonBtn.setBorderPainted(false);
+		jsonBtn.setPreferredSize(new Dimension(90, 40));
+
+		jsonBtn.addActionListener(new ActionListener() {
+			@Override
+			public void actionPerformed(ActionEvent e) {
+				if (!isDataLoaded()) {
+					JOptionPane.showMessageDialog(mainFrame, "请先加载PE文件！", "提示", JOptionPane.WARNING_MESSAGE);
+					return;
+				}
+				exportJsonData();
+			}
+		});
+
+		return jsonBtn;
 	}
 
 	// ============================================
@@ -541,21 +727,25 @@ public class SectionInfoUI {
 
 		fileChooser.setDialogTitle("请选择要分析的PE文件");
 
-		FileNameExtensionFilter filter = new FileNameExtensionFilter(
-				"PE可执行文件 (*.exe, *.dll, *.sys)", "exe", "dll", "sys");
+		FileNameExtensionFilter filter = new FileNameExtensionFilter("PE可执行文件 (*.exe, *.dll, *.sys)", "exe", "dll",
+				"sys");
 		fileChooser.setFileFilter(filter);
 		fileChooser.addChoosableFileFilter(new javax.swing.filechooser.FileFilter() {
 			@Override
-			public boolean accept(File f) { return true; }
+			public boolean accept(File f) {
+				return true;
+			}
+
 			@Override
-			public String getDescription() { return "所有文件 (*.*)"; }
+			public String getDescription() {
+				return "所有文件 (*.*)";
+			}
 		});
 
 		if (lastDirectory != null) {
 			fileChooser.setCurrentDirectory(lastDirectory);
 		} else {
-			fileChooser.setCurrentDirectory(
-					new File(System.getProperty("user.home") + "/Desktop"));
+			fileChooser.setCurrentDirectory(new File(System.getProperty("user.home") + "/Desktop"));
 		}
 
 		fileChooser.setFileSelectionMode(JFileChooser.FILES_ONLY);
@@ -563,7 +753,6 @@ public class SectionInfoUI {
 		return fileChooser;
 	}
 
-	/** 安全的 FileView：不调用系统图标 API，避免 Win32ShellFolder NPE */
 	private static FileView createSafeFileView() {
 		return new FileView() {
 			@Override
@@ -600,12 +789,17 @@ public class SectionInfoUI {
 		panel.setBorder(BorderFactory.createEmptyBorder(0, 0, 0, 10));
 		panel.setPreferredSize(new Dimension(160, 0));
 
-		Color[] menuColors = { new Color(52, 152, 219), new Color(231, 76, 60), new Color(46, 134, 193),
-				new Color(39, 174, 96), new Color(155, 89, 182) };
+		Color[] menuColors = { new Color(52, 152, 219), // 总览
+				new Color(231, 76, 60), // DOS头
+				new Color(46, 134, 193), // 文件头
+				new Color(39, 174, 96), // 可选头
+				new Color(155, 89, 182), // 节表
+				new Color(230, 126, 34) // 统计
+		};
 
-		String[] menuNames = { "总览", "DOS头", "文件头", "可选头", "节表" };
+		String[] menuNames = { "总览", "DOS头", "文件头", "可选头", "节表", "统计" };
 
-		String[] cardNames = { CARD_OVERVIEW, CARD_DOS, CARD_FILE, CARD_OPTIONAL, CARD_SECTIONS };
+		String[] cardNames = { CARD_OVERVIEW, CARD_DOS, CARD_FILE, CARD_OPTIONAL, CARD_SECTIONS, CARD_STATS };
 
 		for (int i = 0; i < menuNames.length; i++) {
 			JButton menuBtn = createMenuButton(menuNames[i], menuColors[i]);
@@ -619,23 +813,22 @@ public class SectionInfoUI {
 			});
 
 			panel.add(menuBtn);
-			panel.add(Box.createVerticalStrut(8));
+			panel.add(Box.createVerticalStrut(6));
 		}
 
 		panel.add(Box.createVerticalGlue());
-
 		return panel;
 	}
 
 	private static JButton createMenuButton(String text, Color color) {
 		JButton btn = new JButton(text);
-		btn.setFont(new Font("微软雅黑", Font.BOLD, 15));
+		btn.setFont(new Font("微软雅黑", Font.BOLD, 14));
 		btn.setForeground(Color.WHITE);
 		btn.setBackground(color);
 		btn.setFocusPainted(false);
 		btn.setBorderPainted(false);
-		btn.setPreferredSize(new Dimension(140, 45));
-		btn.setMaximumSize(new Dimension(140, 45));
+		btn.setPreferredSize(new Dimension(140, 38));
+		btn.setMaximumSize(new Dimension(140, 38));
 		btn.setAlignmentX(JLabel.CENTER_ALIGNMENT);
 
 		btn.addMouseListener(new java.awt.event.MouseAdapter() {
@@ -676,6 +869,7 @@ public class SectionInfoUI {
 		cardPanel.add(createFileHeaderCard(), CARD_FILE);
 		cardPanel.add(createOptionalHeaderCard(), CARD_OPTIONAL);
 		cardPanel.add(createSectionsCard(), CARD_SECTIONS);
+		cardPanel.add(createStatsCard(), CARD_STATS);
 
 		return cardPanel;
 	}
@@ -685,33 +879,40 @@ public class SectionInfoUI {
 	// ============================================
 
 	private static JPanel createOverviewCard() {
-		JPanel panel = createCardPanel("文件总览");
+		JPanel panel = createCardPanel("文件总览", true);
 
 		JPanel infoPanel = new JPanel();
 		infoPanel.setLayout(new BoxLayout(infoPanel, BoxLayout.Y_AXIS));
 		infoPanel.setOpaque(false);
-		infoPanel.setBorder(BorderFactory.createEmptyBorder(20, 20, 20, 20));
+		infoPanel.setBorder(BorderFactory.createEmptyBorder(15, 20, 15, 20));
 
 		infoPanel.add(createInfoRow("文件类型", showData.optionalHeader.magic + " " + showData.fileHeader.characteristics));
-		infoPanel.add(createInfoRow("节数量", String.valueOf(showData.sections.size())));
-		infoPanel.add(createInfoRow("入口点", showData.optionalHeader.addressOfEntryPoint));
-		infoPanel.add(createInfoRow("镜像基址", showData.optionalHeader.imageBase));
-		infoPanel.add(createInfoRow("镜像大小", showData.optionalHeader.sizeOfImage));
-		infoPanel.add(createInfoRow("子系统", showData.optionalHeader.subsystem));
+		infoPanel.add(createInfoRow("节数量", String.valueOf(showData.sections.size()), "PE文件包含的节总数"));
+		infoPanel.add(createInfoRow("入口点 (RVA)", showData.optionalHeader.addressOfEntryPoint, "程序入口点的相对虚拟地址"));
+		infoPanel.add(createInfoRow("镜像基址", showData.optionalHeader.imageBase, "PE加载到内存的首选地址"));
+		infoPanel.add(createInfoRow("镜像大小", showData.optionalHeader.sizeOfImage, "加载到内存后的总大小"));
+		infoPanel.add(createInfoRow("子系统", showData.optionalHeader.subsystem, "1=Native(驱动), 2=GUI, 3=CUI"));
 		infoPanel.add(createInfoRow("Magic状态", showData.dosHeader.magicStatus));
 
-		JLabel tip = new JLabel("点击左侧菜单查看详细信息");
-		tip.setFont(new Font("微软雅黑", Font.PLAIN, 14));
-		tip.setForeground(new Color(100, 100, 100));
-		tip.setBorder(BorderFactory.createEmptyBorder(20, 0, 0, 0));
-		infoPanel.add(tip);
+		infoPanel.add(Box.createVerticalStrut(10));
+		infoPanel.add(new JSeparator());
+		infoPanel.add(Box.createVerticalStrut(10));
 
-		// 快捷键提示
-		JLabel shortcut = new JLabel("快捷键：Ctrl+O 打开文件，Ctrl+S 导出数据");
-		shortcut.setFont(new Font("微软雅黑", Font.PLAIN, 12));
-		shortcut.setForeground(new Color(150, 150, 150));
-		shortcut.setBorder(BorderFactory.createEmptyBorder(5, 0, 0, 0));
-		infoPanel.add(shortcut);
+		if (currentFilePath != null) {
+			File f = new File(currentFilePath);
+			infoPanel.add(createInfoRow("文件名", f.getName()));
+			infoPanel.add(createInfoRow("文件大小", formatFileSize(f.length())));
+			infoPanel.add(createInfoRow("修改时间",
+					new SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(new Date(f.lastModified()))));
+		}
+		infoPanel.add(
+				createInfoRow("分析时间", new SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(new Date(loadTimestamp))));
+
+		infoPanel.add(Box.createVerticalStrut(10));
+		JLabel tip = new JLabel("提示: 点击左侧菜单查看详细信息 | 快捷键: Ctrl+O 打开, Ctrl+S 导出");
+		tip.setFont(new Font("微软雅黑", Font.PLAIN, 12));
+		tip.setForeground(new Color(100, 100, 100));
+		infoPanel.add(tip);
 
 		panel.add(infoPanel, BorderLayout.CENTER);
 		return panel;
@@ -722,9 +923,13 @@ public class SectionInfoUI {
 	// ============================================
 
 	private static JPanel createDosHeaderCard() {
-		JPanel panel = createCardPanel("DOS头信息");
+		JPanel panel = createCardPanel("DOS头信息", true);
 		JPanel infoPanel = createInfoPanel();
-		infoPanel.add(createInfoRow("Magic状态", showData.dosHeader.magicStatus));
+
+		infoPanel.add(createInfoRow("Magic状态", showData.dosHeader.magicStatus, "MZ = 有效PE文件"));
+		infoPanel.add(createInfoRow("e_magic", "0x5A4D (MZ)", "DOS头签名"));
+		infoPanel.add(createInfoRow("e_lfanew", "0x00000080", "NT头偏移（通常为0x80）"));
+
 		panel.add(infoPanel, BorderLayout.CENTER);
 		return panel;
 	}
@@ -734,16 +939,17 @@ public class SectionInfoUI {
 	// ============================================
 
 	private static JPanel createFileHeaderCard() {
-		JPanel panel = createCardPanel("标准PE文件头");
+		JPanel panel = createCardPanel("标准PE文件头", true);
 		JPanel infoPanel = createInfoPanel();
 
-		infoPanel.add(createInfoRow("Machine", showData.fileHeader.machine, "CPU 架构类型"));
-		infoPanel.add(createInfoRow("节数量", showData.fileHeader.numberOfSections, "PE 文件包含的节（Section）数量"));
-		infoPanel.add(createInfoRow("时间戳", showData.fileHeader.timeDateStamp, "文件编译时间 (自 1970-01-01 的秒数)"));
-		infoPanel.add(createInfoRow("符号表偏移", showData.fileHeader.pointerToSymbolTable, "COFF 符号表在文件中的位置，通常为 0"));
-		infoPanel.add(createInfoRow("符号数量", showData.fileHeader.numberOfSymbols, "COFF 符号表条目数，通常为 0"));
-		infoPanel.add(createInfoRow("可选头大小", showData.fileHeader.sizeOfOptionalHeader, "IMAGE_OPTIONAL_HEADER 的字节数 (PE32=0xE0, PE32+=0xF0)"));
-		infoPanel.add(createInfoRow("特征", showData.fileHeader.characteristics, "文件特性标志 (bit1=EXE, bit13=DLL)"));
+		infoPanel.add(createInfoRow("Machine", showData.fileHeader.machine, "CPU架构类型"));
+		infoPanel.add(createInfoRow("节数量", showData.fileHeader.numberOfSections, "PE文件包含的节(Section)数量"));
+		infoPanel.add(createInfoRow("时间戳", showData.fileHeader.timeDateStamp, "文件编译时间(自1970-01-01的秒数)"));
+		infoPanel.add(createInfoRow("符号表偏移", showData.fileHeader.pointerToSymbolTable, "COFF符号表位置，通常为0"));
+		infoPanel.add(createInfoRow("符号数量", showData.fileHeader.numberOfSymbols, "COFF符号表条目数，通常为0"));
+		infoPanel
+				.add(createInfoRow("可选头大小", showData.fileHeader.sizeOfOptionalHeader, "可选头字节数(PE32=0xE0, PE32+=0xF0)"));
+		infoPanel.add(createInfoRow("特征", showData.fileHeader.characteristics, "文件特性标志(bit1=EXE, bit13=DLL)"));
 
 		panel.add(infoPanel, BorderLayout.CENTER);
 		return panel;
@@ -754,21 +960,21 @@ public class SectionInfoUI {
 	// ============================================
 
 	private static JPanel createOptionalHeaderCard() {
-		JPanel panel = createCardPanel("可选头信息");
+		JPanel panel = createCardPanel("可选头信息", true);
 		JPanel infoPanel = createInfoPanel();
 
-		infoPanel.add(createInfoRow("Magic", showData.optionalHeader.magic, "PE32 (32位) 或 PE32+ (64位)"));
+		infoPanel.add(createInfoRow("Magic", showData.optionalHeader.magic, "PE32(32位) 或 PE32+(64位)"));
 		infoPanel.add(createInfoRow("链接器版本", showData.optionalHeader.LinkerVersion, "生成此文件的链接器版本"));
-		infoPanel.add(createInfoRow("入口点", showData.optionalHeader.addressOfEntryPoint, "程序第一条指令的内存地址 (RVA)"));
-		infoPanel.add(createInfoRow("代码基址", showData.optionalHeader.baseOfCode, "代码段起始的内存地址 (RVA)"));
-		infoPanel.add(createInfoRow("镜像基址", showData.optionalHeader.imageBase, "PE 加载到内存时的首选起始地址"));
-		infoPanel.add(createInfoRow("节对齐", showData.optionalHeader.sectionAlignment, "节在内存中的最小对齐单位 (字节)"));
-		infoPanel.add(createInfoRow("文件对齐", showData.optionalHeader.fileAlignment, "节在文件中的最小对齐单位 (字节)"));
+		infoPanel.add(createInfoRow("入口点 (RVA)", showData.optionalHeader.addressOfEntryPoint, "程序第一条指令的内存地址"));
+		infoPanel.add(createInfoRow("代码基址", showData.optionalHeader.baseOfCode, "代码段起始的内存地址(RVA)"));
+		infoPanel.add(createInfoRow("镜像基址", showData.optionalHeader.imageBase, "PE加载到内存时的首选起始地址"));
+		infoPanel.add(createInfoRow("节对齐", showData.optionalHeader.sectionAlignment, "节在内存中的最小对齐单位(字节)"));
+		infoPanel.add(createInfoRow("文件对齐", showData.optionalHeader.fileAlignment, "节在文件中的最小对齐单位(字节)"));
 		infoPanel.add(createInfoRow("操作系统版本", showData.optionalHeader.OperatingSystemVersion, "运行所需的最低操作系统版本"));
 		infoPanel.add(createInfoRow("镜像版本", showData.optionalHeader.ImageVersion, "此映像自身的版本号"));
 		infoPanel.add(createInfoRow("子系统版本", showData.optionalHeader.SubsystemVersion, "运行所需的最低子系统版本"));
-		infoPanel.add(createInfoRow("镜像大小", showData.optionalHeader.sizeOfImage, "加载后总内存占用 (字节)"));
-		infoPanel.add(createInfoRow("头大小", showData.optionalHeader.sizeOfHeaders, "所有头部的总大小 (字节)"));
+		infoPanel.add(createInfoRow("镜像大小", showData.optionalHeader.sizeOfImage, "加载后总内存占用(字节)"));
+		infoPanel.add(createInfoRow("头大小", showData.optionalHeader.sizeOfHeaders, "所有头部的总大小(字节)"));
 		infoPanel.add(createInfoRow("子系统", showData.optionalHeader.subsystem, "1=Native(驱动), 2=GUI, 3=CUI(命令行)"));
 
 		panel.add(infoPanel, BorderLayout.CENTER);
@@ -780,7 +986,7 @@ public class SectionInfoUI {
 	// ============================================
 
 	private static JPanel createSectionsCard() {
-		JPanel panel = createCardPanel("节表信息 (" + showData.sections.size() + "个)");
+		JPanel panel = createCardPanel("节表信息 (" + showData.sections.size() + "个)", true);
 		JPanel infoPanel = createSectionInfoPanel();
 		panel.add(new JScrollPane(infoPanel), BorderLayout.CENTER);
 		return panel;
@@ -801,7 +1007,6 @@ public class SectionInfoUI {
 			for (int i = 0; i < showData.sections.size(); i++) {
 				ShowData.SectionInfo section = showData.sections.get(i);
 
-				// 半透明白色背景容器，包裹每个节
 				JPanel sectionBlock = new JPanel();
 				sectionBlock.setLayout(new BoxLayout(sectionBlock, BoxLayout.Y_AXIS));
 				sectionBlock.setBackground(new Color(255, 255, 255, 180));
@@ -831,52 +1036,136 @@ public class SectionInfoUI {
 	}
 
 	// ============================================
-	// 二十、UI辅助方法
+	// 二十、卡片6：统计信息
+	// ============================================
+
+	private static JPanel createStatsCard() {
+		JPanel panel = createCardPanel("统计信息", true);
+		JPanel infoPanel = createInfoPanel();
+
+		if (!isDataLoaded()) {
+			infoPanel.add(createInfoRow("状态", "请先加载PE文件"));
+		} else {
+			infoPanel.add(createInfoRow("总节数", String.valueOf(showData.sections.size())));
+			infoPanel.add(createInfoRow("总节大小", calculateTotalSectionSize()));
+			infoPanel.add(createInfoRow("平均节大小", calculateAverageSectionSize()));
+			infoPanel.add(createInfoRow("最大节", getLargestSectionName()));
+			infoPanel.add(createInfoRow("最小节", getSmallestSectionName()));
+			infoPanel.add(createInfoRow("文件格式", showData.optionalHeader.magic));
+			infoPanel.add(createInfoRow("文件类型", showData.fileHeader.characteristics));
+			infoPanel.add(createInfoRow("子系统", showData.optionalHeader.subsystem));
+
+			infoPanel.add(Box.createVerticalStrut(10));
+			infoPanel.add(new JSeparator());
+			infoPanel.add(Box.createVerticalStrut(10));
+
+			infoPanel.add(createInfoRow("可执行节", String.valueOf(countExecutableSections())));
+			infoPanel.add(createInfoRow("可写节", String.valueOf(countWritableSections())));
+			infoPanel.add(createInfoRow("只读节", String.valueOf(countReadOnlySections())));
+		}
+
+		panel.add(infoPanel, BorderLayout.CENTER);
+		return panel;
+	}
+
+	private static String getLargestSectionName() {
+		if (showData == null || showData.sections.isEmpty())
+			return "N/A";
+		ShowData.SectionInfo largest = showData.sections.get(0);
+		for (ShowData.SectionInfo s : showData.sections) {
+			if (parseSize(s.virtualSize) > parseSize(largest.virtualSize)) {
+				largest = s;
+			}
+		}
+		return largest.name + " (" + largest.virtualSize + ")";
+	}
+
+	private static String getSmallestSectionName() {
+		if (showData == null || showData.sections.isEmpty())
+			return "N/A";
+		ShowData.SectionInfo smallest = showData.sections.get(0);
+		for (ShowData.SectionInfo s : showData.sections) {
+			if (parseSize(s.virtualSize) < parseSize(smallest.virtualSize)) {
+				smallest = s;
+			}
+		}
+		return smallest.name + " (" + smallest.virtualSize + ")";
+	}
+
+	private static int countExecutableSections() {
+		int count = 0;
+		for (ShowData.SectionInfo s : showData.sections) {
+			if (s.characteristics != null && s.characteristics.toLowerCase().contains("可执行")) {
+				count++;
+			}
+		}
+		return count;
+	}
+
+	private static int countWritableSections() {
+		int count = 0;
+		for (ShowData.SectionInfo s : showData.sections) {
+			if (s.characteristics != null && s.characteristics.toLowerCase().contains("可写")) {
+				count++;
+			}
+		}
+		return count;
+	}
+
+	private static int countReadOnlySections() {
+		int count = 0;
+		for (ShowData.SectionInfo s : showData.sections) {
+			if (s.characteristics != null && !s.characteristics.toLowerCase().contains("可写")
+					&& !s.characteristics.toLowerCase().contains("可执行")) {
+				count++;
+			}
+		}
+		return count;
+	}
+
+	// ============================================
+	// 二十一、UI辅助方法
 	// ============================================
 
 	private static JPanel createInfoPanel() {
-			JPanel panel = new JPanel();
-			panel.setLayout(new BoxLayout(panel, BoxLayout.Y_AXIS));
-			panel.setOpaque(false);
-			panel.setBorder(BorderFactory.createEmptyBorder(10, 20, 10, 20));
-			return panel;
+		JPanel panel = new JPanel();
+		panel.setLayout(new BoxLayout(panel, BoxLayout.Y_AXIS));
+		panel.setOpaque(false);
+		panel.setBorder(BorderFactory.createEmptyBorder(10, 20, 10, 20));
+		return panel;
+	}
+
+	private static JPanel createCardPanel(String title, boolean withCopyButton) {
+		JPanel panel = new JPanel(new BorderLayout());
+		panel.setOpaque(false);
+		panel.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
+
+		JPanel topRow = new JPanel(new BorderLayout());
+		topRow.setOpaque(false);
+
+		JLabel titleLabel = new JLabel(title);
+		titleLabel.setFont(new Font("微软雅黑", Font.BOLD, 20));
+		titleLabel.setForeground(new Color(50, 50, 150));
+		topRow.add(titleLabel, BorderLayout.WEST);
+
+		if (withCopyButton) {
+			JButton copyBtn = new JButton("复制");
+			copyBtn.setFont(new Font("微软雅黑", Font.PLAIN, 12));
+			copyBtn.setPreferredSize(new Dimension(80, 28));
+			copyBtn.addActionListener(e -> {
+				String data = getAllDataAsText();
+				java.awt.datatransfer.StringSelection ss = new java.awt.datatransfer.StringSelection(data);
+				java.awt.Toolkit.getDefaultToolkit().getSystemClipboard().setContents(ss, null);
+				JOptionPane.showMessageDialog(mainFrame, "已复制到剪贴板！", "提示", JOptionPane.INFORMATION_MESSAGE);
+			});
+			topRow.add(copyBtn, BorderLayout.EAST);
 		}
 
-		/** 创建带标题和复制按钮的卡片面板 */
-		private static JPanel createCardPanel(String title) {
-			return createCardPanel(title, true);
-		}
+		panel.add(topRow, BorderLayout.NORTH);
+		return panel;
+	}
 
-		private static JPanel createCardPanel(String title, boolean withCopyButton) {
-			JPanel panel = new JPanel(new BorderLayout());
-			panel.setOpaque(false);
-			panel.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
-
-			JPanel topRow = new JPanel(new BorderLayout());
-			topRow.setOpaque(false);
-
-			JLabel titleLabel = new JLabel(title);
-			titleLabel.setFont(new Font("微软雅黑", Font.BOLD, 20));
-			titleLabel.setForeground(new Color(50, 50, 150));
-			topRow.add(titleLabel, BorderLayout.WEST);
-
-			if (withCopyButton) {
-				JButton copyBtn = new JButton("复制");
-				copyBtn.setFont(new Font("微软雅黑", Font.PLAIN, 12));
-				copyBtn.setPreferredSize(new Dimension(60, 28));
-				copyBtn.addActionListener(e -> {
-					JTextArea temp = new JTextArea(getAllDataAsText());
-					temp.selectAll();
-					temp.copy();
-				});
-				topRow.add(copyBtn, BorderLayout.EAST);
-			}
-
-			panel.add(topRow, BorderLayout.NORTH);
-			return panel;
-		}
-
-		private static JPanel createInfoRow(String label, String value) {
+	private static JPanel createInfoRow(String label, String value) {
 		return createInfoRow(label, value, null);
 	}
 
@@ -908,7 +1197,7 @@ public class SectionInfoUI {
 	}
 
 	// ============================================
-	// 二十一、状态栏
+	// 二十二、状态栏
 	// ============================================
 
 	private static JPanel createStatusPanel() {
@@ -921,7 +1210,7 @@ public class SectionInfoUI {
 		statusLabel.setForeground(new Color(200, 200, 200));
 		panel.add(statusLabel);
 
-		JLabel dragHint = new JLabel("  |  支持拖拽文件到窗口");
+		JLabel dragHint = new JLabel("  |  支持拖拽 | Ctrl+O 打开 | Ctrl+S 导出 | Ctrl+E 导出JSON");
 		dragHint.setFont(new Font("微软雅黑", Font.PLAIN, 11));
 		dragHint.setForeground(new Color(160, 160, 160));
 		panel.add(dragHint);
@@ -936,12 +1225,9 @@ public class SectionInfoUI {
 	}
 
 	// ============================================
-	// 二十二、内部类：BackgroundPanel（背景面板）
+	// 二十三、内部类：BackgroundPanel（背景面板）
 	// ============================================
 
-	/**
-	 * 自定义背景面板类 功能：为UI组件提供背景图片或渐变色背景
-	 */
 	static class BackgroundPanel extends JPanel {
 
 		private Image backgroundImage;

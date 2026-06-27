@@ -1,6 +1,5 @@
 package pe;
 
-import java.io.IOException;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
@@ -65,8 +64,8 @@ final class PeDataConverter {
                     .pointerToRawData(formatHex(rawSection.pointerToRawData, 8))
                     .characteristics(formatSectionCharacteristics(rawSection.characteristics)));
             }
-        } catch (RuntimeException ex) {
-            // 异常时重置所有字段，避免部分填充的脏数据
+        } catch (Exception ex) {
+            // 转换过程不应抛异常，此处防御意外错误
             ShowData errorShow = ShowData.create();
             errorShow.dosHeader.magicStatus("读取异常");
             System.err.println("[PeDataConverter] convert failed: " + ex.getClass().getSimpleName() + ": " + ex.getMessage());
@@ -235,41 +234,31 @@ final class PeDataConverter {
         if (rawName.charAt(0) != '/') {
             return rawName;
         }
-        if (raw.sourceFilePath == null || raw.sourceFilePath.isEmpty()) {
-            return rawName;
+        if (raw.coffStringTable == null) {
+            return rawName; // COFF 字符串表不可用（无符号表或读取失败）
         }
 
-        try (java.io.RandomAccessFile raf = new java.io.RandomAccessFile(raw.sourceFilePath, "r")) {
-            java.nio.channels.FileChannel channel = raf.getChannel();
-            LittleEndianReader lreader = new LittleEndianReader(channel);
-            final long pointerToSymbolTable = Integer.toUnsignedLong(raw.fileHeader.pointerToSymbolTable);
-            final long numberOfSymbols = Integer.toUnsignedLong(raw.fileHeader.numberOfSymbols);
-            final long stringTablePosition = pointerToSymbolTable + 18 * numberOfSymbols;
-            final long realNamePosition = stringtoLong(rawName.substring(1));
-            if (realNamePosition < 0) {
-                return rawName;
-            }
-            StringBuilder realName = new StringBuilder();
-            for (long i = 0; i < 256; i++) { // 硬上限 256 字节防止无限循环
-                byte nowch = lreader.readByte(stringTablePosition + realNamePosition + i);
-                if (nowch == 0) {
-                    break;
-                }
-                int c = nowch & 0xFF;
-                if ((c >= 0x20 && c < 0x7F) || c >= 0xA0) {
-                    realName.append((char) c);
-                } else {
-                    realName.append('.');
-                }
-            }
-            String result = realName.toString();
-            return result.isEmpty() ? rawName : result;
-        } catch (IOException ex) {
+        long realNamePosition = stringToLong(rawName.substring(1));
+        if (realNamePosition < 0 || realNamePosition > raw.coffStringTable.length - 1) {
             return rawName;
         }
+        StringBuilder realName = new StringBuilder();
+        for (int i = (int) realNamePosition; i < raw.coffStringTable.length && i - realNamePosition < 256; i++) {
+            int c = raw.coffStringTable[i] & 0xFF;
+            if (c == 0) {
+                break;
+            }
+            if ((c >= 0x20 && c < 0x7F) || c >= 0xA0) {
+                realName.append((char) c);
+            } else {
+                realName.append('.');
+            }
+        }
+        String result = realName.toString();
+        return result.isEmpty() ? rawName : result;
     }
 
-    private static long stringtoLong(String str) {
+    private static long stringToLong(String str) {
         if (str == null || str.isEmpty()) {
             return -1;
         }

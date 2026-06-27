@@ -49,9 +49,15 @@ public final class PeParser {
             FileChannel channel = raf.getChannel();
             LittleEndianReader lreader = new LittleEndianReader(channel);
 
-            rawdata.dosHeader
-                .magic(lreader.readShort(0))
-                .lfanew(lreader.readInt(DOS_LFANEW_OFFSET));
+            rawdata.dosHeader.magic(lreader.readShort(0));
+
+            // 校验 DOS 魔数 "MZ"（在读取 e_lfanew 之前，避免小文件 EOF）
+            if (Short.toUnsignedInt(rawdata.dosHeader.e_magic) != DOS_MAGIC) {
+                rawdata.typeError = true;
+                return rawdata;
+            }
+
+            rawdata.dosHeader.lfanew(lreader.readInt(DOS_LFANEW_OFFSET));
 
             // 用 long 避免 e_lfanew + 4 溢出绕过边界检查
             final long ntHeaderPosition = Integer.toUnsignedLong(rawdata.dosHeader.e_lfanew);
@@ -90,8 +96,8 @@ public final class PeParser {
 
             long sectionAlignmentPosition;
             if (rawdata.optionalHeader.magic == 0x10B) {
-                rawdata.optionalHeader.imageBase(Integer.toUnsignedLong(lreader.readInt(optionalHeaderPosition + 24)));
-                sectionAlignmentPosition = optionalHeaderPosition + 28;
+                rawdata.optionalHeader.imageBase(Integer.toUnsignedLong(lreader.readInt(optionalHeaderPosition + 28))); // PE32: ImageBase 在 +28
+                sectionAlignmentPosition = optionalHeaderPosition + 32;
             } else if (rawdata.optionalHeader.magic == 0x20B) {
                 rawdata.optionalHeader.imageBase(lreader.readLong(optionalHeaderPosition + 24));
                 sectionAlignmentPosition = optionalHeaderPosition + 32;
@@ -148,6 +154,27 @@ public final class PeParser {
                     .pointerToRawData(lreader.readInt(sectionPosition + 20))
                     .characteristics(lreader.readInt(sectionPosition + 36));
                 rawdata.addSection(section);
+            }
+
+            // 缓存 COFF 字符串表，避免 PeDataConverter 重复打开文件
+            if (rawdata.fileHeader.pointerToSymbolTable != 0 && rawdata.fileHeader.numberOfSymbols > 0) {
+                long symbolTablePos = Integer.toUnsignedLong(rawdata.fileHeader.pointerToSymbolTable);
+                long stringTablePos = symbolTablePos + 18L * Integer.toUnsignedLong(rawdata.fileHeader.numberOfSymbols);
+                if (stringTablePos + 4 <= channel.size()) {
+                    int tableSize = lreader.readInt(stringTablePos);
+                    if (tableSize >= 4 && tableSize <= 1024 * 1024 // 合理上限 1MB
+                        && stringTablePos + tableSize <= channel.size()) {
+                        byte[] table = new byte[tableSize];
+                        java.nio.ByteBuffer buf = java.nio.ByteBuffer.wrap(table);
+                        int read = 0;
+                        while (read < tableSize) {
+                            int n = channel.read(buf, stringTablePos + read);
+                            if (n < 0) break;
+                            read += n;
+                        }
+                        rawdata.coffStringTable = table;
+                    }
+                }
             }
         }
 

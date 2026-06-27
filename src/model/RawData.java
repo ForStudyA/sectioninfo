@@ -11,6 +11,7 @@ import java.util.List;
 public class RawData {
     public boolean typeError;          // 格式校验标志：true 表示 PE 格式异常
     public String sourceFilePath;      // 原始文件路径，供回读文件用
+    public byte[] coffStringTable;     // COFF 字符串表缓存（用于解析 "/N" 长节名）
     public RawDosHeader dosHeader;     // DOS 头
     public int signature;              // PE 签名 "PE\0\0" (0x00004550)
     public RawPeFileHeader fileHeader; // 标准 PE 文件头 (20字节)
